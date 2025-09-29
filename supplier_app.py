@@ -116,6 +116,7 @@ ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'bmp', 'pdf', 'doc', 'docx'}
 # Predefined list of supplier categories.  When adding or editing a
 # supplier, the category field is presented as a dropdown with these
 # options.  Suppliers can belong to one of these activities.
+# Categories of suppliers.  Added 'autre' to allow a catch‑all option.
 CATEGORIES = [
     'carrelage',
     'sanitaires',
@@ -125,7 +126,8 @@ CATEGORIES = [
     'menuiserie bois',
     'cuisine',
     'luminaire',
-    'structures métalliques'
+    'structures métalliques',
+    'autre'
 ]
 
 # Email of the application administrator.  Only this user may create
@@ -587,7 +589,7 @@ INDEX_TEMPLATE = r"""
                 </div>
                 <div class="right">
                     {% if s['rating'] == 'green' %}
-                        <span class="badge rating-green"><i class="fa fa-star"></i> Top</span>
+                        <span class="badge rating-green">OK</span>
                     {% elif s['rating'] == 'yellow' %}
                         <span class="badge rating-yellow">Moyen</span>
                     {% elif s['rating'] == 'red' %}
