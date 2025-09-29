@@ -83,16 +83,31 @@ app = Flask(__name__)
 # development purposes.
 app.secret_key = os.environ.get('SECRET_KEY', 'tradeLinkPro-secret-key')
 
-# Configure where uploaded files will be stored.  The ``uploads`` directory
-# resides in the same directory as this script.  If it doesn't exist,
-# create it at startup.
+# Determine the base directory for resolving relative paths to the source
+# code.  ``BASE_DIR`` is used as a fallback when no environment overrides
+# are provided.  In containerised deployments (such as Railway), the
+# application directory may be read‑only, so we allow both the upload
+# directory and database path to be configured via environment variables.
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
-UPLOAD_FOLDER = os.path.join(BASE_DIR, "uploads")
+
+# Configure where uploaded files will be stored.  By default the
+# ``uploads`` directory resides next to this script.  In production you
+# should set ``UPLOAD_FOLDER`` via an environment variable to point to a
+# writable location (for example a mounted volume).  The directory is
+# created at startup if it doesn't exist.
+UPLOAD_FOLDER = os.environ.get('UPLOAD_FOLDER', os.path.join(BASE_DIR, "uploads"))
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 
-# Path to the SQLite database file.  It lives next to this script.
-DATABASE = os.path.join(BASE_DIR, 'suppliers.db')
+# Path to the SQLite database file.  If ``DATABASE_PATH`` is set in the
+# environment it will be used, otherwise we default to storing the
+# database alongside the script.  On hosting providers like Railway the
+# source directory may be read only, so you should set ``DATABASE_PATH``
+# to a writable location such as ``/tmp/suppliers.db`` or a mounted
+# volume (e.g. ``/data/suppliers.db``).  Without this override the
+# application will attempt to create the database in the current
+# directory which may fail in read‑only environments.
+DATABASE = os.environ.get('DATABASE_PATH', os.path.join(BASE_DIR, 'suppliers.db'))
 
 # Allowed file extensions for catalogue documents and photos.  This
 # prevents unwanted files from being uploaded.
