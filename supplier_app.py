@@ -268,7 +268,6 @@ def init_db():
 @app.before_first_request
 def initialize_database() -> None:
     init_db()
-        db.commit()
 
 
 ###############################################################################
