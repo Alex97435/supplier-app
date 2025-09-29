@@ -252,6 +252,22 @@ def init_db():
             )
             """
         )
+
+
+# ---------------------------------------------------------------------------
+# Application lifecycle hooks
+# ---------------------------------------------------------------------------
+
+# To ensure that the database schema is present when running under a WSGI
+# server (e.g. Gunicorn on Railway), we register a ``before_first_request``
+# handler.  When Flask receives the first request after the app has been
+# imported, this callback will initialise the database.  Without this,
+# ``init_db()`` would only be invoked when the module is run directly via
+# ``python supplier_app.py``, which is not the case in production.  The
+# function simply calls the existing ``init_db()`` helper.
+@app.before_first_request
+def initialize_database() -> None:
+    init_db()
         db.commit()
 
 
