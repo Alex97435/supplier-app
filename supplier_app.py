@@ -564,9 +564,14 @@ INDEX_TEMPLATE = r"""
     </header>
     <div class="container">
         <div class="search-container">
-            <form method="get" action="{{ url_for('index') }}" class="search-form">
-                <input type="text" name="search" placeholder="Rechercher un fournisseur..." value="{{ search_query }}" autocomplete="off">
-                <button type="submit"><i class="fa fa-search"></i></button>
+            <form method="get" action="{{ url_for('index') }}" class="search-form" style="flex: 1; display: flex; align-items: center; gap: 6px;">
+                <input type="text" name="search" placeholder="Rechercher un fournisseur..." value="{{ search_query }}" autocomplete="off" style="flex: 1;">
+                <button type="submit" style="background: none; border: none; color: #799bb9; font-size: 18px; cursor: pointer;"><i class="fa fa-search"></i></button>
+                <select name="sort" onchange="this.form.submit()" style="background-color: #15202b; color: #f5f5f5; border: 1px solid #374d65; border-radius: 6px; padding: 6px;">
+                    <option value="" {% if not sort_key %}selected{% endif %}>Tri par défaut</option>
+                    <option value="category" {% if sort_key == 'category' %}selected{% endif %}>Catégorie</option>
+                    <option value="rating" {% if sort_key == 'rating' %}selected{% endif %}>Couleur</option>
+                </select>
             </form>
         </div>
         <div class="cards">
@@ -620,6 +625,10 @@ INDEX_TEMPLATE = r"""
         <button class="close-btn" onclick="closeScanner()">&times;</button>
     </div>
     <script src="https://unpkg.com/html5-qrcode@2.2.1/html5-qrcode.min.js"></script>
+    <!-- Include Tesseract.js for client-side OCR of business card images.  The CDN
+         provides a version that runs entirely in the browser without needing
+         a server-side dependency. -->
+    <script src="https://cdn.jsdelivr.net/npm/tesseract.js@2/dist/tesseract.min.js"></script>
     <script>
     let html5QrcodeScanner = null;
 
@@ -938,6 +947,15 @@ ADD_EDIT_TEMPLATE = r"""
                 <p>Catalogue actuel : <a href="{{ url_for('uploaded_file', filename=supplier['catalog_filename']) }}" target="_blank">{{ supplier['catalog_filename'] }}</a></p>
             {% endif %}
 
+            {% if not supplier %}
+            <!-- Business card image input and button to trigger OCR analysis.  The user selects
+                 a photo of a business card and clicks the button; the script uses
+                 Tesseract.js to extract text and populate the name and phone fields. -->
+            <label for="business_card">Carte de visite :</label>
+            <input type="file" id="business_card" accept="image/*">
+            <button type="button" class="scan-btn" onclick="analyzeCard()"><i class="fa fa-id-card"></i> Scanner carte</button>
+            {% endif %}
+
             <div class="actions">
                 <button type="submit" class="btn btn-primary">{{ 'Mettre à jour' if supplier else 'Ajouter' }}</button>
                 <a href="{{ url_for('index') }}" class="btn btn-secondary">Annuler</a>
@@ -1079,6 +1097,64 @@ ADD_EDIT_TEMPLATE = r"""
 
     function closeScanModal() {
         stopScanner();
+    }
+
+    // OCR scanning for business cards.  Uses Tesseract.js to recognise text in
+    // an uploaded image and fills the name and phone fields if possible.
+    async function analyzeCard() {
+        const input = document.getElementById('business_card');
+        if (!input || input.files.length === 0) {
+            alert('Veuillez sélectionner une image de carte de visite.');
+            return;
+        }
+        const file = input.files[0];
+        // Disable the scan button while processing to prevent multiple clicks
+        const btns = document.querySelectorAll('button.scan-btn');
+        let cardBtn = null;
+        btns.forEach(b => {
+            if (b.getAttribute('onclick') && b.getAttribute('onclick').includes('analyzeCard')) {
+                cardBtn = b;
+            }
+        });
+        if (cardBtn) {
+            cardBtn.disabled = true;
+            cardBtn.innerHTML = '<i class="fa fa-spinner fa-spin"></i> Analyse…';
+        }
+        try {
+            const result = await Tesseract.recognize(file, 'eng', { logger: m => console.log(m) });
+            const text = result.data && result.data.text ? result.data.text : '';
+            if (!text) {
+                alert("Aucun texte n'a été détecté sur l'image.");
+            }
+            // Extract phone number using regex: looks for sequences of digits possibly
+            // separated by spaces, dots or dashes.  Accepts optional leading '+'.
+            const phoneMatch = text.match(/\+?\d[\d\s().-]{7,}/);
+            if (phoneMatch) {
+                // Remove non-digit characters except '+'
+                const digits = phoneMatch[0].replace(/[^0-9+]/g, '');
+                document.getElementById('contact').value = digits;
+            }
+            // Extract name: choose the first line without digits or '@' symbol
+            const lines = text.split(/\r?\n/).map(l => l.trim()).filter(l => l);
+            let foundName = '';
+            for (const line of lines) {
+                if (!/[0-9@]/.test(line) && line.length > 1) {
+                    foundName = line;
+                    break;
+                }
+            }
+            if (foundName) {
+                document.getElementById('name').value = foundName;
+            }
+        } catch (err) {
+            console.error(err);
+            alert("Erreur lors de l'analyse de la carte.");
+        } finally {
+            if (cardBtn) {
+                cardBtn.disabled = false;
+                cardBtn.innerHTML = '<i class="fa fa-id-card"></i> Scanner carte';
+            }
+        }
     }
     </script>
 </body>
@@ -1409,26 +1485,35 @@ def index():
     The search bar filters suppliers by name, category or description.  Only
     suppliers with a ``user_id`` matching the current session are returned.
     """
+    # Retrieve search and sort parameters from the query string
     search_query = request.args.get('search', '').strip()
+    sort_key = request.args.get('sort', '').strip()
     db = get_db()
     user_id = session['user_id']
+    # Build the base SQL and parameters based on whether a search term was provided.
+    sql = "SELECT * FROM suppliers WHERE user_id = ?"
+    params = [user_id]
     if search_query:
         like_query = f'%{search_query}%'
-        rows = db.execute(
-            "SELECT * FROM suppliers WHERE user_id = ? AND (name LIKE ? OR category LIKE ? OR description LIKE ?) ORDER BY created_at DESC, name",
-            (user_id, like_query, like_query, like_query)
-        ).fetchall()
+        sql += " AND (name LIKE ? OR category LIKE ? OR description LIKE ?)"
+        params.extend([like_query, like_query, like_query])
+    # Apply sorting based on the sort_key.  Sorting by rating uses a CASE expression to
+    # order green first, then yellow, then red.  For categories we sort alphabetically.
+    if sort_key == 'category':
+        sql += " ORDER BY category COLLATE NOCASE ASC, name COLLATE NOCASE ASC"
+    elif sort_key == 'rating':
+        sql += " ORDER BY CASE rating WHEN 'green' THEN 1 WHEN 'yellow' THEN 2 WHEN 'red' THEN 3 ELSE 4 END, created_at DESC, name COLLATE NOCASE ASC"
     else:
-        rows = db.execute(
-            "SELECT * FROM suppliers WHERE user_id = ? ORDER BY created_at DESC, name",
-            (user_id,)
-        ).fetchall()
+        # Default sort: newest first then name
+        sql += " ORDER BY created_at DESC, name COLLATE NOCASE ASC"
+    rows = db.execute(sql, tuple(params)).fetchall()
     total = len(rows)
     username = session.get('username', 'Utilisateur')
     return render_template_string(
         INDEX_TEMPLATE,
         suppliers=rows,
         search_query=search_query,
+        sort_key=sort_key,
         total_suppliers=total,
         username=username,
         is_admin=is_admin()
