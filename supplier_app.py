@@ -952,8 +952,12 @@ ADD_EDIT_TEMPLATE = r"""
                  a photo of a business card and clicks the button; the script uses
                  Tesseract.js to extract text and populate the name and phone fields. -->
             <label for="business_card">Carte de visite :</label>
-            <input type="file" id="business_card" accept="image/*">
-            <button type="button" class="scan-btn" onclick="analyzeCard()"><i class="fa fa-id-card"></i> Scanner carte</button>
+            <!-- The capture attribute on mobile devices will open the camera directly.  The onchange handler
+                 triggers the OCR as soon as a photo is taken or selected. -->
+            <input type="file" id="business_card" accept="image/*" capture="environment" onchange="analyzeCard()">
+            <!-- When the user clicks the scan button, trigger the file input first (if no file selected) and then run the OCR
+                 via analyzeCard().  This improves usability on mobile devices where tapping the button should open the camera. -->
+            <button type="button" class="scan-btn" onclick="triggerCardInput()"><i class="fa fa-id-card"></i> Scanner carte</button>
             {% endif %}
 
             <div class="actions">
@@ -972,6 +976,8 @@ ADD_EDIT_TEMPLATE = r"""
         <button class="close-btn" onclick="closeScanModal()">&times;</button>
     </div>
     <script src="https://unpkg.com/html5-qrcode@2.2.1/html5-qrcode.min.js"></script>
+    <!-- Load Tesseract.js here so OCR functions on the add/edit page.  Without this, Tesseract will be undefined. -->
+    <script src="https://cdn.jsdelivr.net/npm/tesseract.js@2/dist/tesseract.min.js"></script>
     <script>
     let qrScanner = null;
 
@@ -1154,6 +1160,17 @@ ADD_EDIT_TEMPLATE = r"""
                 cardBtn.disabled = false;
                 cardBtn.innerHTML = '<i class="fa fa-id-card"></i> Scanner carte';
             }
+        }
+    }
+
+    // Trigger the file input when the user clicks the scan card button if no file has been selected yet.  If a file is already
+    // selected, analyse it immediately.  This function provides a smoother user experience on mobile.
+    function triggerCardInput() {
+        const input = document.getElementById('business_card');
+        if (input && (!input.files || input.files.length === 0)) {
+            input.click();
+        } else {
+            analyzeCard();
         }
     }
     </script>
