@@ -1,6 +1,6 @@
-from supplier_app import app  # importe l'application Flask existante
-from vercel_wsgi import handle
+# api/index.py
+from supplier_app import app  # importe l’application Flask
+import awsgi                 # bibliothèque qui adapte WSGI à AWS Lambda
 
 def handler(event, context):
-    # Vercel appelle cette fonction; handle convertit la requête en WSGI
-    return handle(app, event, context)
+    return awsgi.response(app, event, context)
